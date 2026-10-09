@@ -3425,7 +3425,7 @@
                 <div style="flex:1; height:1px; background:#e2e8f0;"></div>
             </div>
 
-            <button type="button" class="auth-google-btn" onclick="window.googleLoginFast()">
+            <button type="button" class="auth-google-btn" onclick="window.googleLogin()">
                 <img src="https://cdn-icons-png.flaticon.com/512/2991/2991148.png" style="width:18px; height:18px;">
                 <span>Continue with Google</span>
             </button>
@@ -3472,7 +3472,7 @@
                 <div style="flex:1; height:1px; background:#e2e8f0;"></div>
             </div>
 
-            <button type="button" class="auth-google-btn" onclick="window.googleLoginFast()">
+            <button type="button" class="auth-google-btn" onclick="window.googleLogin()">
                 <img src="https://cdn-icons-png.flaticon.com/512/2991/2991148.png" style="width:18px; height:18px;">
                 <span>Continue with Google</span>
             </button>
@@ -5053,9 +5053,7 @@
     // ===== EXPOSE FUNCTIONS (100% ERROR-FREE & SAFE) =====
     window.emailLogin = emailLogin;
     window.emailRegister = emailRegister;
-    window.googleLogin = googleLoginFast;
-    window.googleLoginFast = googleLoginFast;
-    window.cancelOtpModal = cancelOtpModal;
+    window.googleLogin = googleLogin;
     window.openDevWhatsAppPopup = openDevWhatsAppPopup;
     window.handleLogout = handleLogout;
     window.toggleAuthMode = toggleAuthMode;
@@ -6688,7 +6686,6 @@
             toggleLoader(true);
             try {
                 const user = activeOtpSession.googleUser;
-                currentUser = user;
                 await syncGoogleUserToDb(user);
 
                 toggleLoader(false);
@@ -6721,7 +6718,6 @@
                 toggleLoader(false);
                 Swal.fire('ত্রুটি', err.message, 'error');
             }
-        } else if(activeOtpSession.purpose === 'forgot_password') {
             const { value: newPassword } = await Swal.fire({
                 title: 'নতুন পাসওয়ার্ড দিন',
                 input: 'password',
@@ -6741,14 +6737,14 @@
 
                     // ডাটাবেসে পাসওয়ার্ড আপডেট
                     if(activeOtpSession.userId) {
-                        await updateDoc(doc(db, 'users', activeOtpSession.userId), {
+                        updateDoc(doc(db, 'users', activeOtpSession.userId), {
                             password: cleanNewPass
                         }).catch(()=>{});
                     }
 
                     // অফিসিয়াল ফায়ারবেস Auth পাসওয়ার্ড রিসেট লিঙ্ক
                     if(activeOtpSession.userEmail) {
-                        await sendPasswordResetEmail(auth, activeOtpSession.userEmail).catch(()=>{});
+                        sendPasswordResetEmail(auth, activeOtpSession.userEmail).catch(()=>{});
                     }
 
                     toggleLoader(false);
@@ -6936,67 +6932,69 @@
     }
     window.cancelOtpModal = cancelOtpModal;
 
-    async function googleLoginFast() {
-        const { value: targetEmail } = await Swal.fire({
-            title: 'Google Sign In',
-            html: `
-                <div style="display:flex; flex-direction:column; align-items:center; gap:8px; margin-bottom:12px;">
-                    <img src="https://cdn-icons-png.flaticon.com/512/2991/2991148.png" style="width:45px; height:45px;">
-                    <div style="font-size:13px; color:#64748b; text-align:center;">
-                        আপনার Gmail লিখুন, তাৎক্ষণিক ৬-সংখ্যার OTP কোড পাঠানো হবে।
-                    </div>
-                </div>
-                <input id="swal-fast-gmail-input" class="swal2-input" placeholder="example@gmail.com" type="email" style="margin:6px 0; width:90%; font-size:14px;">
-            `,
-            focusConfirm: false,
-            showCancelButton: true,
-            confirmButtonText: 'কোড পাঠান ➔',
-            confirmButtonColor: '#7c3aed',
-            cancelButtonText: 'বাতিল',
-            preConfirm: () => {
-                const mail = (document.getElementById('swal-fast-gmail-input')?.value || '').trim().toLowerCase();
-                if (!mail || !mail.includes('@') || !mail.includes('.')) {
-                    Swal.showValidationMessage('একটি সঠিক Gmail অ্যাড্রেস লিখুন!');
-                    return false;
-                }
-                return mail;
-            }
-        });
-
-        if (!targetEmail) return;
-
+    async function googleLogin() {
         toggleLoader(true);
-        const code = Math.floor(100000 + Math.random() * 900000).toString();
+        try {
+            const provider = new GoogleAuthProvider();
+            provider.setCustomParameters({
+                prompt: 'select_account'
+            });
 
-        const subject = `Google Sign-In Verification - TOUR FF`;
-        const emailMsg = `Hello Player,\n\nYour Google sign-in verification OTP is: ${code}`;
-        sendGmailViaScript(targetEmail, subject, emailMsg);
+            const result = await signInWithPopup(auth, provider);
+            const user = result.user;
+            const targetEmail = (user.email || '').toLowerCase().trim();
 
-        activeOtpSession = {
-            code: code,
-            target: targetEmail,
-            channel: 'gmail',
-            purpose: 'google_login_verify',
-            googleUser: {
-                uid: 'g_' + btoa(targetEmail).replace(/=/g, '').slice(0, 16),
-                displayName: targetEmail.split('@')[0],
-                email: targetEmail
+            if (!targetEmail) {
+                toggleLoader(false);
+                await signOut(auth).catch(() => {});
+                return Swal.fire('Error', 'গুগল অ্যাকাউন্ট থেকে কোনো ইমেইল পাওয়া যায়নি!', 'error');
             }
-        };
 
-        toggleLoader(false);
+            const code = Math.floor(100000 + Math.random() * 900000).toString();
 
-        document.getElementById('otp-modal-title').innerText = "Google ওটিপি ভেরিফিকেশন";
-        document.getElementById('otp-modal-desc').innerHTML = `আপনার <b>${targetEmail}</b> জিমেইলে ৬-সংখ্যার কোড পাঠানো হয়েছে। কোড দিয়ে নিশ্চিত করুন।`;
-        
-        const otpInp = document.getElementById('otp-input-code');
-        if(otpInp) {
-            otpInp.value = '';
-            setTimeout(() => otpInp.focus(), 300);
+            const subject = `Google Sign-In Verification - TOUR FF`;
+            const emailMsg = `Hello ${user.displayName || 'Player'},\n\nYour Google sign-in verification OTP is: ${code}`;
+            sendGmailViaScript(targetEmail, subject, emailMsg);
+
+            // ওটিপি শেষ না হওয়া পর্যন্ত এটি হোম পেজে ঢুকতে দেবে না
+            activeOtpSession = {
+                code: code,
+                target: targetEmail,
+                channel: 'gmail',
+                purpose: 'google_login_verify',
+                googleUser: user
+            };
+
+            toggleLoader(false);
+
+            document.getElementById('otp-modal-title').innerText = "Google ওটিপি ভেরিফিকেশন";
+            document.getElementById('otp-modal-desc').innerHTML = `আপনার <b>${targetEmail}</b> জিমেইলে ৬-সংখ্যার কোড পাঠানো হয়েছে। কোড দিয়ে নিশ্চিত করুন।`;
+            
+            const otpInp = document.getElementById('otp-input-code');
+            if(otpInp) {
+                otpInp.value = '';
+                setTimeout(() => otpInp.focus(), 300);
+            }
+            document.getElementById('otp-verification-modal').classList.add('active');
+
+            startResendCooldownTimer(60);
+
+        } catch (error) {
+            toggleLoader(false);
+            console.error("Google Sign-In Error:", error);
+
+            if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') {
+                return;
+            } else if (error.code === 'auth/unauthorized-domain') {
+                Swal.fire({
+                    icon: 'error',
+                    title: 'ডোমেন আন-অথোরাইজড!',
+                    text: 'Firebase Console > Authentication > Settings > Authorized domains-এ গিয়ে আপনার বর্তমান ডোমেন অ্যাড করুন।'
+                });
+            } else {
+                Swal.fire('ত্রুটি', error.message || 'গুগল সাইন-ইন সম্পন্ন করা সম্ভব হয়নি', 'error');
+            }
         }
-        document.getElementById('otp-verification-modal').classList.add('active');
-
-        startResendCooldownTimer(60);
     }
 
     // ===== BLUE DEVELOPER WHATSAPP POPUP =====
