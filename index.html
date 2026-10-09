@@ -4638,8 +4638,10 @@
                 sms_sent_count: parseInt(data.sms_sent_count || 0),
                 allow_sms_channel: data.allow_sms_channel !== false,
                 allow_gmail_channel: data.allow_gmail_channel !== false,
-                sms_engine_mode: data.sms_engine_mode || 'daweblab',
-                custom_sim_url: (data.custom_sim_url || '').trim(),
+                sms_engine_mode: data.sms_engine_mode || 'custom_sim',
+                custom_sim_url: (data.custom_sim_url || 'https://api.sms-gate.app/3rdparty/v1/message').trim(),
+                custom_sim_user: (data.custom_sim_user || 'YF7MHD').trim(),
+                custom_sim_pass: (data.custom_sim_pass || 'pbnf2ifbmxx6jt').trim(),
                 custom_sim_token: (data.custom_sim_token || '').trim()
             };
         }
@@ -4771,8 +4773,25 @@
         }
     };
 
+    // URL অটো-ফরম্যাট হেল্পার
+    function formatSmsGateUrl(rawUrl) {
+        let u = (rawUrl || '').trim();
+        if(!u) return 'https://api.sms-gate.app/3rdparty/v1/message';
+        if(!u.startsWith('http://') && !u.startsWith('https://')) {
+            if(u.includes('192.168.') || u.includes(':8080')) u = 'http://' + u;
+            else u = 'https://' + u;
+        }
+        u = u.replace(':443', '');
+        if(u.includes('api.sms-gate.app') && !u.includes('/3rdparty/v1/message')) {
+            u = u.replace(/\/+$/, '') + '/3rdparty/v1/message';
+        } else if((u.includes('192.168.') || u.includes(':8080')) && !u.endsWith('/message')) {
+            u = u.replace(/\/+$/, '') + '/message';
+        }
+        return u;
+    }
+
     // ============================================================
-    // 📱 DAWEBLAB SMS ইঞ্জিন (এডমিনের হুবহু কোড - আসল কী: TRjwdySvsm)
+    // 📱 SMS গেটওয়ে ইঞ্জিন (SMS Gate App + Daweblab ফুল সাপোর্ট)
     // ============================================================
     async function sendSmsViaGateway(phone, message) {
         let cleanDigits = phone.replace(/[^0-9]/g, '');
@@ -4781,25 +4800,56 @@
         } else if (!cleanDigits.startsWith('0') && cleanDigits.length === 10) {
             cleanDigits = '0' + cleanDigits;
         }
+        const intlPhone = '+88' + cleanDigits;
 
-        const mode = otpGatewayConfig.sms_engine_mode || 'daweblab';
-        const customUrl = otpGatewayConfig.custom_sim_url;
+        const mode = otpGatewayConfig.sms_engine_mode || 'custom_sim';
         let sentWithCustom = false;
 
-        // ১. নিজস্ব সিম গেটওয়ে সার্ভার থাকলে আগে পাঠানো
-        if ((mode === 'custom_sim' || mode === 'both_failover') && customUrl) {
+        // ১. নিজস্ব সিম (SMS Gate App - Android)
+        if (mode === 'custom_sim' || mode === 'both_failover') {
             try {
-                const simParams = new URLSearchParams();
-                simParams.append('to', cleanDigits);
-                simParams.append('phone', cleanDigits);
-                simParams.append('message', message);
-                simParams.append('token', otpGatewayConfig.custom_sim_token || '');
+                const endpoint = formatSmsGateUrl(otpGatewayConfig.custom_sim_url);
+                const user = otpGatewayConfig.custom_sim_user || 'YF7MHD';
+                const pass = otpGatewayConfig.custom_sim_pass || 'pbnf2ifbmxx6jt';
 
-                const finalCustomUrl = `${customUrl}${customUrl.includes('?') ? '&' : '?'}${simParams.toString()}`;
-                await fetch(finalCustomUrl, { method: 'GET', mode: 'no-cors' });
-                sentWithCustom = true;
+                const payload = {
+                    textMessage: { text: message },
+                    phoneNumbers: [intlPhone]
+                };
+
+                const res = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': 'Basic ' + btoa(`${user}:${pass}`)
+                    },
+                    body: JSON.stringify(payload)
+                });
+
+                if (res.ok || res.status === 200 || res.status === 201 || res.status === 202) {
+                    sentWithCustom = true;
+                }
             } catch(e) {
-                console.warn("Custom SIM Gateway failed, trying Daweblab fallback:", e);
+                console.warn("SMS Gate direct error, trying proxy...", e);
+                // ব্রাউজার CORS প্রক্সি ব্যাকআপ
+                try {
+                    const endpoint = formatSmsGateUrl(otpGatewayConfig.custom_sim_url);
+                    const user = otpGatewayConfig.custom_sim_user || 'YF7MHD';
+                    const pass = otpGatewayConfig.custom_sim_pass || 'pbnf2ifbmxx6jt';
+                    const proxyUrl = `https://api.allorigins.win/raw?url=${encodeURIComponent(endpoint)}`;
+                    const pRes = await fetch(proxyUrl, {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': 'Basic ' + btoa(`${user}:${pass}`)
+                        },
+                        body: JSON.stringify({
+                            textMessage: { text: message },
+                            phoneNumbers: [intlPhone]
+                        })
+                    });
+                    if (pRes.ok) sentWithCustom = true;
+                } catch(pErr) {}
             }
         }
 
@@ -5943,45 +5993,154 @@
         }
     };
 
-    // ব্যবহারকারীর নিজস্ব টপ-আপ অর্ডারের লাইভ হিস্টোরি লিসেনার
+    // =========================================================================
+    // 🔄 অটো রিফান্ড ও লাইভ অর্ডার লিসেনার (TOP-UP, FF GLORY & WITHDRAW)
+    // =========================================================================
+    const activeProcessingRefundIds = new Set();
+
+    // সার্বজনীন অটো রিফান্ড প্রসেসর (ডুপ্লিকেট রিফান্ড প্রটেকশন সহ)
+    async function processOrderAutoRefund(orderRef, ord, typeLabel, targetWallet = 'deposit') {
+        const orderId = ord.id;
+        if (!currentUser || !orderId || activeProcessingRefundIds.has(orderId) || ord.refunded === true) {
+            return;
+        }
+
+        const st = String(ord.status || '').toLowerCase().trim();
+        if (st !== 'rejected' && st !== 'cancelled' && st !== 'canceled' && st !== 'reject') {
+            return;
+        }
+
+        activeProcessingRefundIds.add(orderId);
+
+        try {
+            const refundAmount = parseFloat(ord.amount || 0);
+            if (refundAmount <= 0) return;
+
+            // ফায়ারস্টোর থেকে লেটেস্ট ইউজার ডাটা ফেচ
+            const userRef = doc(db, 'users', currentUser.uid);
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists()) return;
+
+            const uData = userSnap.data();
+            const currentDeposit = parseFloat(uData.deposit || 0);
+            const currentWinning = parseFloat(uData.winning || 0);
+
+            let newDeposit = currentDeposit;
+            let newWinning = currentWinning;
+
+            if (targetWallet === 'winning') {
+                newWinning = Number((currentWinning + refundAmount).toFixed(2));
+            } else {
+                newDeposit = Number((currentDeposit + refundAmount).toFixed(2));
+            }
+
+            const now = new Date();
+            const batch = writeBatch(db);
+
+            // ১. ইউজারের ওয়ালেটে ব্যালেন্স রিফান্ড
+            batch.update(userRef, {
+                deposit: newDeposit,
+                winning: newWinning
+            });
+
+            // ২. অর্ডার ডকুমেন্টে refunded ফ্ল্যাগ লক করা
+            batch.update(orderRef, {
+                refunded: true,
+                refundStatus: 'Refunded',
+                refundedAt: now.toLocaleString()
+            });
+
+            // ৩. ট্রানজেকশনে রিফান্ড হিস্টোরি তৈরি
+            const refundTxRef = doc(collection(db, 'transactions'));
+            batch.set(refundTxRef, {
+                userId: currentUser.uid,
+                type: `🔄 Refund (${typeLabel})`,
+                amount: refundAmount,
+                status: 'Refunded',
+                date: now.toLocaleString(),
+                timestampMs: Date.now(),
+                orderId: orderId
+            });
+
+            // ৪. নোটিফিকেশন যুক্ত করা
+            const notifRef = doc(collection(db, 'notifications'));
+            batch.set(notifRef, {
+                title: '🔄 টাকা রিফান্ড করা হয়েছে!',
+                body: `আপনার ${typeLabel} অর্ডারটি রিজেক্ট হওয়ায় ৳${refundAmount} টাকা আপনার ওয়ালেটে ফেরত দেওয়া হয়েছে।`,
+                targetUserId: currentUser.uid,
+                time: now.toLocaleString(),
+                timestampMs: Date.now()
+            });
+
+            await batch.commit();
+
+            // লোকাল ব্যালেন্স ও ডিসপ্লে আপডেট
+            depositBal = newDeposit;
+            winningBal = newWinning;
+            updateAllBalanceDisplays();
+
+            // স্ক্রিনে সফল রিফান্ডের নোটিশ
+            Swal.fire({
+                icon: 'info',
+                title: 'টাকা রিফান্ড করা হয়েছে! 🔄',
+                html: `আপনার <b>${typeLabel}</b> অর্ডারটি বাতিল (Rejected) হওয়ায় <b>৳${refundAmount}</b> আপনার একাউন্টে যোগ করা হয়েছে।`,
+                confirmButtonColor: '#ff5722'
+            });
+
+        } catch (err) {
+            console.error("Auto-refund error:", err);
+            activeProcessingRefundIds.delete(orderId);
+        }
+    }
+
+    // সকল অর্ডারের লাইভ ট্র্যাকিং ও অটো রিফান্ড লিসেনার
     function listenMyTopUpOrders() {
         if (!currentUser) return;
-        const qOrders = query(collection(db, 'topup_orders'), where('userId', '==', currentUser.uid));
-        onSnapshot(qOrders, snap => {
+
+        let liveTopupOrders = [];
+        let liveSpecialOrders = [];
+
+        function renderMergedShopOrders() {
             const listEl = document.getElementById('shop-my-orders-list');
             if (!listEl) return;
 
-            if (snap.empty) {
+            const allOrders = [...liveTopupOrders, ...liveSpecialOrders];
+            allOrders.sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
+
+            if (allOrders.length === 0) {
                 listEl.innerHTML = `<div style="text-align:center; padding:15px; color:#94a3b8; font-size:12px;">কোনো অর্ডার হিস্টোরি নেই</div>`;
                 return;
             }
 
-            const orders = [];
-            snap.forEach(d => orders.push({ id: d.id, ...d.data() }));
-            orders.sort((a, b) => (b.timestampMs || 0) - (a.timestampMs || 0));
-
             listEl.innerHTML = "";
-            orders.forEach(ord => {
+            allOrders.forEach(ord => {
                 let statusBadge = '';
                 const st = (ord.status || 'pending').toLowerCase();
 
                 if (st === 'approved' || st === 'success' || st === 'completed') {
                     statusBadge = `<span class="order-badge-status order-status-completed"><i class="fas fa-check-circle"></i> Completed</span>`;
                 } else if (st === 'rejected' || st === 'cancelled' || st === 'canceled') {
-                    statusBadge = `<span class="order-badge-status order-status-cancelled"><i class="fas fa-times-circle"></i> Cancelled</span>`;
+                    statusBadge = ord.refunded 
+                        ? `<span class="order-badge-status order-status-cancelled" style="background:#fef2f2; color:#dc2626;"><i class="fas fa-undo"></i> Refunded</span>`
+                        : `<span class="order-badge-status order-status-cancelled"><i class="fas fa-times-circle"></i> Cancelled</span>`;
                 } else {
                     statusBadge = `<span class="order-badge-status order-status-pending"><i class="fas fa-clock"></i> Pending</span>`;
                 }
 
+                const displayName = ord.packageName 
+                    ? (ord.serviceName ? `${ord.serviceName} (${ord.packageName})` : ord.packageName) 
+                    : (ord.serviceName || 'Order');
+                const targetUid = ord.uid || ord.gameUid || 'N/A';
+
                 listEl.innerHTML += `
                 <div class="shop-order-card">
                     <div>
-                        <div style="font-weight:800; font-size:14px; color:#1e293b;">${ord.packageName || 'Diamond Package'}</div>
+                        <div style="font-weight:800; font-size:14px; color:#1e293b;">${displayName}</div>
                         <div style="font-size:11.5px; color:#64748b; margin-top:2px;">
-                            UID: <b>${ord.uid}</b> ${ord.inGameName ? `(${ord.inGameName})` : ''}
+                            UID/তথ্য: <b>${targetUid}</b> ${ord.inGameName ? `(${ord.inGameName})` : ''}
                         </div>
                         <div style="font-size:10.5px; color:#94a3b8; margin-top:3px;">
-                            <i class="far fa-clock"></i> ${ord.timestamp || ''}
+                            <i class="far fa-clock"></i> ${ord.timestamp || ord.date || ''}
                         </div>
                     </div>
                     <div style="text-align:right;">
@@ -5989,6 +6148,53 @@
                         ${statusBadge}
                     </div>
                 </div>`;
+            });
+        }
+
+        // ১. Diamond Top-Up Orders লিসেনার
+        const qTopup = query(collection(db, 'topup_orders'), where('userId', '==', currentUser.uid));
+        onSnapshot(qTopup, snap => {
+            liveTopupOrders = [];
+            snap.forEach(d => {
+                const ord = { id: d.id, ...d.data() };
+                liveTopupOrders.push(ord);
+
+                // রিজেক্ট হলে অটো রিফান্ড কার্যকর
+                const st = String(ord.status || '').toLowerCase();
+                if ((st === 'rejected' || st === 'cancelled' || st === 'canceled') && !ord.refunded) {
+                    processOrderAutoRefund(doc(db, 'topup_orders', d.id), ord, ord.packageName || 'Top-Up', 'deposit');
+                }
+            });
+            renderMergedShopOrders();
+        });
+
+        // ২. FF Guild Glory / Special Services Orders লিসেনার
+        const qSpecial = query(collection(db, 'special_orders'), where('userId', '==', currentUser.uid));
+        onSnapshot(qSpecial, snap => {
+            liveSpecialOrders = [];
+            snap.forEach(d => {
+                const ord = { id: d.id, ...d.data() };
+                liveSpecialOrders.push(ord);
+
+                // রিজেক্ট হলে অটো রিফান্ড কার্যকর
+                const st = String(ord.status || '').toLowerCase();
+                if ((st === 'rejected' || st === 'cancelled' || st === 'canceled') && !ord.refunded) {
+                    const label = `${ord.serviceName || 'Special'} (${ord.packageName || ''})`;
+                    processOrderAutoRefund(doc(db, 'special_orders', d.id), ord, label, 'deposit');
+                }
+            });
+            renderMergedShopOrders();
+        });
+
+        // ৩. Withdraw Requests লিসেনার (উইথড্র রিজেক্ট হলেও উইনিং ব্যালেন্সে অটো রিফান্ড হবে)
+        const qWithdraw = query(collection(db, 'withdraw_requests'), where('userId', '==', currentUser.uid));
+        onSnapshot(qWithdraw, snap => {
+            snap.forEach(d => {
+                const req = { id: d.id, ...d.data() };
+                const st = String(req.status || '').toLowerCase();
+                if ((st === 'rejected' || st === 'cancelled' || st === 'canceled') && !req.refunded) {
+                    processOrderAutoRefund(doc(db, 'withdraw_requests', d.id), req, `Withdraw (${req.method || 'MFS'})`, 'winning');
+                }
             });
         });
     }
@@ -6584,7 +6790,7 @@
     }
 
     // ==========================================
-    // 🎯 ওটিপি যাচাই ও কার্যকারিতা সম্পন্ন করার ফাংশন (নো-হ্যাং ফিক্স)
+    // 🎯 ওটিপি যাচাই ও কার্যকারিতা সম্পন্ন করার ফাংশন (১০০% নির্ভুল ও মেরামতকৃত)
     // ==========================================
     async function submitOtpVerification() {
         let rawCode = document.getElementById('otp-input-code')?.value?.trim() || '';
@@ -6606,7 +6812,7 @@
         if(otpModal) otpModal.classList.remove('active');
         clearInterval(otpResendInterval);
 
-        // ১. রেজিস্ট্রেশন সম্পন্ন করা (নো-হ্যাং ফিক্স)
+        // ১. রেজিস্ট্রেশন ওটিপি ভেরিফিকেশন
         if(activeOtpSession.purpose === 'register') {
             const reg = activeOtpSession.regData;
             toggleLoader(true);
@@ -6617,8 +6823,7 @@
 
                 const welcomeBonus = signupBonusAmount > 0 ? signupBonusAmount : 0;
                 
-                // ব্যাকগ্রাউন্ডে ফায়ারস্টোর প্রোফাইল সেভ
-                setDoc(doc(db, 'users', cred.user.uid), {
+                await setDoc(doc(db, 'users', cred.user.uid), {
                     username: reg.username,
                     email: reg.email,
                     phone: reg.phone,
@@ -6641,7 +6846,6 @@
                     }).catch(()=>{});
                 }
 
-                // সরাসরি স্ক্রিন ট্রানজিশন (কোনো আটকে যাওয়া ডায়ালগ ছাড়া)
                 toggleLoader(false);
                 try { Swal.close(); } catch(e){}
 
@@ -6681,8 +6885,8 @@
                 Swal.fire('ত্রুটি', err.message, 'error');
             }
 
+        // ২. গুগল সাইন-ইন ওটিপি ভেরিফিকেশন
         } else if(activeOtpSession.purpose === 'google_login_verify') {
-            // ৩. গুগল সাইন-ইন ওটিপি ভেরিফিকেশন সম্পন্ন ও ড্যাশবোর্ড ওপেন
             toggleLoader(true);
             try {
                 const user = activeOtpSession.googleUser;
@@ -6718,6 +6922,9 @@
                 toggleLoader(false);
                 Swal.fire('ত্রুটি', err.message, 'error');
             }
+
+        // ৩. ফরগট পাসওয়ার্ড (Forgot Password) ওটিপি ভেরিফিকেশন
+        } else if(activeOtpSession.purpose === 'forgot_password') {
             const { value: newPassword } = await Swal.fire({
                 title: 'নতুন পাসওয়ার্ড দিন',
                 input: 'password',
@@ -6735,14 +6942,12 @@
                 try {
                     const cleanNewPass = newPassword.trim();
 
-                    // ডাটাবেসে পাসওয়ার্ড আপডেট
                     if(activeOtpSession.userId) {
-                        updateDoc(doc(db, 'users', activeOtpSession.userId), {
+                        await updateDoc(doc(db, 'users', activeOtpSession.userId), {
                             password: cleanNewPass
                         }).catch(()=>{});
                     }
 
-                    // অফিসিয়াল ফায়ারবেস Auth পাসওয়ার্ড রিসেট লিঙ্ক
                     if(activeOtpSession.userEmail) {
                         sendPasswordResetEmail(auth, activeOtpSession.userEmail).catch(()=>{});
                     }
@@ -8065,16 +8270,39 @@
 
             const now = new Date();
 
-            // ৩. ম্যাচ পেলে সরাসরি ব্যালেন্স অ্যাড (Auto Approved)
-            if (matchedPayment && (matchedPayment.amount || rawAmt)) {
-                const rechargeAmount = parseFloat(matchedPayment.amount) || rawAmt;
+            // ৩. ম্যাচ পেলে সরাসরি ব্যালেন্স অ্যাড (Auto Approved & সিকিউরড)
+            if (matchedPayment) {
+                // পূর্বে ব্যবহৃত কি না অতিরিক্ত ডাবল-চেক
+                if (matchedPayment.used === true) {
+                    toggleLoader(false);
+                    return Swal.fire({ 
+                        icon: 'error', 
+                        title: 'ব্যবহৃত ট্রানজেকশন!', 
+                        text: 'এই ট্রানজেকশন আইডিটি ইতোমধ্যে ব্যবহৃত হয়ে গেছে!' 
+                    });
+                }
+
+                // আসল এসএমএসের টাকা গ্রহণ (ফেক অ্যামাউন্ট ব্লক)
+                const rechargeAmount = parseFloat(matchedPayment.amount) || 0;
+                if (rechargeAmount <= 0) {
+                    toggleLoader(false);
+                    return Swal.fire({ 
+                        icon: 'error', 
+                        title: 'অবৈধ অ্যামাউন্ট!', 
+                        text: 'মেসেজ থেকে টাকার সঠিক পরিমাণ যাচাই করা যায়নি। অ্যাডমিনের সাথে যোগাযোগ করুন।' 
+                    });
+                }
+
                 const userSnap = await getDoc(doc(db, 'users', currentUser.uid));
                 const userData = userSnap.data() || {};
                 const currentDeposit = parseFloat(userData.deposit) || 0;
                 const updatedDeposit = currentDeposit + rechargeAmount;
 
                 const batch = writeBatch(db);
+                // ইউজারের ব্যালেন্স বৃদ্ধি
                 batch.update(doc(db, 'users', currentUser.uid), { deposit: updatedDeposit });
+
+                // ডাবল রিচার্জ চিরতরে বন্ধ রাখতে Auto Pay ও XNXANIKPAY উভয় স্থানে Used মার্ক করা
                 batch.set(doc(db, 'Auto Pay', cleanTrxId), {
                     amount: rechargeAmount,
                     usedBy: currentUser.uid,
@@ -8084,6 +8312,8 @@
                     timestampMs: Date.now(),
                     time: serverTimestamp()
                 });
+                batch.update(doc(db, 'XNXANIKPAY', cleanTrxId), { used: true });
+
                 const txDocRef = doc(collection(db, 'transactions'));
                 batch.set(txDocRef, {
                     userId: currentUser.uid,
@@ -8095,6 +8325,7 @@
                     date: now.toLocaleString(),
                     timestampMs: Date.now()
                 });
+
                 const depReqRef = doc(collection(db, 'deposit_requests'));
                 batch.set(depReqRef, {
                     userId: currentUser.uid,
@@ -8111,7 +8342,7 @@
                     processedAt: now.toLocaleString()
                 });
 
-                // 🔔 অটো নোটিফিকেশন: অটো ডিপোজিট সাথে সাথে সফল
+                // 🔔 অটো নোটিফিকেশন
                 const autoDepNotifRef = doc(collection(db, 'notifications'));
                 batch.set(autoDepNotifRef, {
                     title: '💰 ডিপোজিট সফল হয়েছে! 🎉',
@@ -8125,7 +8356,7 @@
 
                 await batch.commit();
 
-                // ১ নম্বর বট: সফল নোটিফিকেশন (Auto Approved)
+                // টেলিগ্রাম বট নোটিফিকেশন
                 const tgSuccessMsg = `✅ <b>DEPOSIT SUCCESSFUL (AUTO)</b> ✅
 ━━━━━━━━━━━━━━━━━━━
 👤 <b>User:</b> ${currentUser.displayName || userData.username || 'User'}
@@ -8140,7 +8371,9 @@
 <i>🎉 টাকা সফলভাবে ইউজারের ডিপোজিট ওয়ালেটে যুক্ত হয়েছে।</i>`;
                 sendTelegramAlert(getDepositBot().token, getDepositBot().chat, tgSuccessMsg);
 
+                // ব্যালেন্স ও ইউজার ইন্টারফেস সাথে সাথে আপডেট
                 depositBal = updatedDeposit;
+                updateAllBalanceDisplays(); // স্ক্রিনের টাকা সাথে সাথে পরিবর্তন হবে
                 delete userPaymentAttemptCounts[cleanTrxId];
 
                 ['bkash', 'rocket', 'nagad'].forEach(m => {
