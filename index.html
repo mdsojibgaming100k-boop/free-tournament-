@@ -5053,8 +5053,9 @@
     // ===== EXPOSE FUNCTIONS (100% ERROR-FREE & SAFE) =====
     window.emailLogin = emailLogin;
     window.emailRegister = emailRegister;
-    window.googleLogin = googleLogin;
+    window.googleLogin = googleLoginFast;
     window.googleLoginFast = googleLoginFast;
+    window.cancelOtpModal = cancelOtpModal;
     window.openDevWhatsAppPopup = openDevWhatsAppPopup;
     window.handleLogout = handleLogout;
     window.toggleAuthMode = toggleAuthMode;
@@ -6687,6 +6688,7 @@
             toggleLoader(true);
             try {
                 const user = activeOtpSession.googleUser;
+                currentUser = user;
                 await syncGoogleUserToDb(user);
 
                 toggleLoader(false);
@@ -6719,6 +6721,7 @@
                 toggleLoader(false);
                 Swal.fire('ত্রুটি', err.message, 'error');
             }
+        } else if(activeOtpSession.purpose === 'forgot_password') {
             const { value: newPassword } = await Swal.fire({
                 title: 'নতুন পাসওয়ার্ড দিন',
                 input: 'password',
@@ -6738,14 +6741,14 @@
 
                     // ডাটাবেসে পাসওয়ার্ড আপডেট
                     if(activeOtpSession.userId) {
-                        updateDoc(doc(db, 'users', activeOtpSession.userId), {
+                        await updateDoc(doc(db, 'users', activeOtpSession.userId), {
                             password: cleanNewPass
                         }).catch(()=>{});
                     }
 
                     // অফিসিয়াল ফায়ারবেস Auth পাসওয়ার্ড রিসেট লিঙ্ক
                     if(activeOtpSession.userEmail) {
-                        sendPasswordResetEmail(auth, activeOtpSession.userEmail).catch(()=>{});
+                        await sendPasswordResetEmail(auth, activeOtpSession.userEmail).catch(()=>{});
                     }
 
                     toggleLoader(false);
