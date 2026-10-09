@@ -4555,9 +4555,6 @@
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js";
     import { 
         getAuth, 
-        initializeAuth,
-        browserLocalPersistence,
-        inMemoryPersistence,
         signInWithEmailAndPassword, 
         createUserWithEmailAndPassword, 
         signOut, 
@@ -4568,8 +4565,7 @@
         EmailAuthProvider, 
         sendPasswordResetEmail,
         GoogleAuthProvider,
-        signInWithPopup,
-        browserPopupRedirectResolver
+        signInWithPopup
     } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js";
 
     const firebaseConfig = {
@@ -4584,16 +4580,7 @@
     
     const app = initializeApp(firebaseConfig);
     const db = getFirestore(app);
-    
-    // IndexedDB ফ্রিজ বাগ রোধ করার জন্য LocalStorage পারসিস্টেন্স
-    let auth;
-    try {
-        auth = initializeAuth(app, {
-            persistence: [browserLocalPersistence, inMemoryPersistence]
-        });
-    } catch(e) {
-        auth = getAuth(app);
-    }
+    const auth = getAuth(app);
 
     // ===== STATE =====
     let currentUser = null;
@@ -6419,7 +6406,7 @@
                     const qUser = query(collection(db, 'users'), where('username', '==', inputVal), limit(1));
                     const snapUser = await Promise.race([
                         getDocs(qUser),
-                        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 2000))
+                        new Promise((_, r) => setTimeout(() => r(new Error('timeout')), 2500))
                     ]);
                     if(!snapUser.empty) {
                         foundEmail = snapUser.docs[0].data()?.email;
@@ -6438,47 +6425,8 @@
                 }
             }
 
-            // ⚡ সরাসরি গুগল আইডেন্টিটি এন্ডপয়েন্টে ১-সেকেন্ড ভেরিফিকেশন (ওয়েবভিউতে কখনো আটকাবে না)
-            const restUrl = `https://identitytoolkit.googleapis.com/v1/accounts:signInWithPassword?key=${firebaseConfig.apiKey}`;
-            
-            const restResponse = await Promise.race([
-                fetch(restUrl, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({
-                        email: targetEmail,
-                        password: p,
-                        returnSecureToken: true
-                    })
-                }),
-                new Promise((_, reject) => setTimeout(() => reject(new Error('নেটওয়ার্ক ড্রপ হয়েছে! ইন্টারনেট কানেকশন চেক করুন।')), 6000))
-            ]);
-
-            const restData = await restResponse.json();
-
-            // গুগলের সরাসরি এরর যাচাই
-            if (restData.error) {
-                toggleLoader(false);
-                const errCode = restData.error.message;
-                console.error("Google Auth Error:", errCode);
-
-                if (errCode.includes('EMAIL_NOT_FOUND')) {
-                    return Swal.fire('অ্যাকাউন্ট নেই', 'এই ইমেইল দিয়ে কোনো অ্যাকাউন্ট তৈরি করা নেই!', 'error');
-                } else if (errCode.includes('INVALID_PASSWORD') || errCode.includes('INVALID_LOGIN_CREDENTIALS')) {
-                    return Swal.fire('পাসওয়ার্ড ভুল', 'আপনার দেওয়া পাসওয়ার্ডটি সঠিক নয়!', 'error');
-                } else if (errCode.includes('OPERATION_NOT_ALLOWED')) {
-                    return Swal.fire('ফায়ারবেস নোটিশ', 'Firebase Console-এ Email/Password এনাবল করা নেই! Firebase Console > Authentication > Sign-in method-এ গিয়ে Email/Password চালু করুন।', 'warning');
-                } else if (errCode.includes('USER_DISABLED')) {
-                    return Swal.fire('অ্যাকাউন্ট ব্যান', 'আপনার অ্যাকাউন্টটি বন্ধ করা হয়েছে।', 'error');
-                } else if (errCode.includes('TOO_MANY_ATTEMPTS')) {
-                    return Swal.fire('অপেক্ষা করুন', 'অতিরিক্ত ভুল চেষ্টার কারণে সাময়িকভাবে বন্ধ। কিছুক্ষণ পর চেষ্টা করুন।', 'warning');
-                } else {
-                    return Swal.fire('লগইন ব্যর্থ', 'কারণ: ' + errCode, 'error');
-                }
-            }
-
-            // গুগলে আইডি ও পাসওয়ার্ড সঠিক হলে ক্লায়েন্ট SDK দিয়ে সেশন সাইন-ইন
-            await signInWithEmailAndPassword(auth, targetEmail, p).catch(err => console.warn("Session sync:", err));
+            // সরাসরি Firebase SDK দিয়ে ফুলপ্রুফ সাইন-ইন
+            await signInWithEmailAndPassword(auth, targetEmail, p);
 
             // লোডার বন্ধ ও ড্যাশবোর্ডে প্রবেশ
             toggleLoader(false);
@@ -6509,7 +6457,21 @@
         } catch(err) {
             toggleLoader(false);
             console.error("Login Error:", err);
-            Swal.fire('ত্রুটি', err.message || 'ইন্টারনেট সমস্যা!', 'error');
+            const errCode = (err.code || err.message || '').toLowerCase();
+            
+            if (errCode.includes('user-not-found') || errCode.includes('invalid-credential') || errCode.includes('invalid_login_credentials')) {
+                Swal.fire('লগইন ব্যর্থ', 'ইউজারনেম/ইমেইল অথবা পাসওয়ার্ড সঠিক নয়!', 'error');
+            } else if (errCode.includes('wrong-password')) {
+                Swal.fire('পাসওয়ার্ড ভুল', 'আপনার দেওয়া পাসওয়ার্ডটি সঠিক নয়!', 'error');
+            } else if (errCode.includes('invalid-email')) {
+                Swal.fire('ভুল ইমেইল', 'ইমেইল অ্যাড্রেসের ফরম্যাট সঠিক নয়!', 'warning');
+            } else if (errCode.includes('user-disabled')) {
+                Swal.fire('অ্যাকাউন্ট ব্যান', 'আপনার অ্যাকাউন্টটি বন্ধ করা হয়েছে।', 'error');
+            } else if (errCode.includes('too-many-requests')) {
+                Swal.fire('অপেক্ষা করুন', 'অতিরিক্ত ভুল চেষ্টার কারণে সাময়িকভাবে বন্ধ। কিছুক্ষণ পর চেষ্টা করুন।', 'warning');
+            } else {
+                Swal.fire('ত্রুটি', err.message || 'ইন্টারনেট সমস্যা!', 'error');
+            }
         }
     }
     window.emailLogin = emailLogin;
