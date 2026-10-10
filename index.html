@@ -4,6 +4,23 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>TOUR FF</title>
+
+<!-- গ্লোবাল স্ক্রিপ্ট এরর ও রিজেকশন সাইলেন্সার (Page Error পপ-আপ প্রতিরোধক) -->
+<script>
+  window.addEventListener('error', function(e) {
+    if (!e || !e.message || e.message.includes('Script error') || e.message.includes('ResizeObserver')) {
+      if (e.preventDefault) e.preventDefault();
+      if (e.stopPropagation) e.stopPropagation();
+      return true;
+    }
+  }, true);
+
+  window.addEventListener('unhandledrejection', function(e) {
+    if (e.preventDefault) e.preventDefault();
+    return true;
+  });
+</script>
+
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&family=Hind+Siliguri:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -11,22 +28,26 @@
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@sweetalert2/theme-material-ui/material-ui.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<!-- Pushwoosh Web Push SDK -->
-<script src="https://cdn.pushwoosh.com/webpush/v3/pushwoosh-web-notifications.js" async></script>
+<!-- Pushwoosh Web Push SDK (Safe Load) -->
+<script src="https://cdn.pushwoosh.com/webpush/v3/pushwoosh-web-notifications.js" async crossorigin="anonymous"></script>
 
-<!-- OneSignal Official Web Push SDK v16 (Unified Clean Integration) -->
-<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
+<!-- OneSignal Official Web Push SDK v16 (Live Notification Active) -->
+<script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer crossorigin="anonymous"></script>
 <script>
   window.OneSignalDeferred = window.OneSignalDeferred || [];
   OneSignalDeferred.push(async function(OneSignal) {
-    await OneSignal.init({
-      appId: "7398e8c1-9373-4680-bc63-27c413779609",
-      safari_web_id: "web.onesignal.auto.3cda868c-95ba-4dc0-a9c6-5ad5b099bc53",
-      allowLocalhostAsSecureOrigin: true,
-      notifyButton: {
-        enable: true,
-      },
-    });
+    try {
+      await OneSignal.init({
+        appId: "7398e8c1-9373-4680-bc63-27c413779609",
+        safari_web_id: "web.onesignal.auto.3cda868c-95ba-4dc0-a9c6-5ad5b099bc53",
+        allowLocalhostAsSecureOrigin: true,
+        notifyButton: {
+          enable: true
+        }
+      });
+    } catch(err) {
+      console.warn("OneSignal Webview Init:", err);
+    }
   });
 </script>
 
@@ -3159,12 +3180,33 @@
         font-weight: 800;
         font-size: 13.5px;
     }
+
+    /* Pushwoosh Red Bell Widget পুরোপুরি বন্ধ */
+    .pushwoosh-subscribe-widget, 
+    #pushwoosh-subscribe-widget,
+    .pw-subscribe-widget,
+    .pw-widget,
+    [class*="pushwoosh"],
+    [id*="pushwoosh-widget"] {
+        display: none !important;
+        visibility: hidden !important;
+        opacity: 0 !important;
+        pointer-events: none !important;
+    }
 </style>
 </head>
 <body>
 
 <!-- INSTANT CACHE LOADER FOR APP NAME & LOGO -->
 <script>
+    // বাহ্যিক CDN বা OneSignal/Pushwoosh এর লোকাল পাথজনিত Script Error প্রতিরোধক
+    window.addEventListener('error', function(e) {
+        if (!e || !e.message || e.message.includes('Script error')) {
+            e && e.preventDefault && e.preventDefault();
+            return true;
+        }
+    }, true);
+
     (function(){
         try {
             var cName = localStorage.getItem('app_site_name');
@@ -3292,8 +3334,8 @@
 
 <!-- AUTH VIEW (ULTRA ESPORTS EDITION WITH AK-47 VS UMP BATTLE) -->
 <div id="auth-view">
-    <!-- FREE FIRE NOSTALGIC AUDIO -->
-    <audio id="ffBgmAudio" loop preload="auto" playsinline autoplay>
+    <!-- FREE FIRE NOSTALGIC AUDIO (Autoplay Safe) -->
+    <audio id="ffBgmAudio" loop preload="none" playsinline>
         <source src="https://www.image2url.com/r2/default/audio/1790787430553-6410d4d2-5acc-441b-88bb-f0e0ad52655a.mp3" type="audio/mpeg">
     </audio>
 
@@ -4560,20 +4602,19 @@
         applicationCode: 'D6B35-91BAF',
         apiToken: '2seNAE74alOrApyG002oRCSbj8eusvgpF5f8rNsWvBlKe8oCEhuMkaJ5oau9YMFmRTM6IlwV0J4eZy9o2JEG',
         defaultNotificationTitle: 'TOUR FF',
-        autoSubscribe: true
+        autoSubscribe: true,
+        subscribeWidget: {
+            enable: false
+        }
     }]);
 
-    // সফলভাবে ডিভাইস রেজিস্টার হলে স্ক্রিনে জানিয়ে দেবে
-    Pushwoosh.push(['on', 'subscribe', function(res) {
-        console.log("Pushwoosh Registered:", res);
-        alert("🎉 অভিনন্দন! আপনার ডিভাইস সফলভাবে Pushwoosh-এ রেজিস্টার হয়েছে!");
-    }]);
-
-    // কোনো এরর থাকলে স্ক্রিনে সতর্কবার্তা দেবে
-    Pushwoosh.push(['on', 'error', function(err) {
-        console.error("Pushwoosh Error:", err);
-        alert("⚠️ Pushwoosh Error: " + (err.message || JSON.stringify(err)));
-    }]);
+    // সাইলেন্ট হ্যান্ডলার (APK এবং ওয়েবে নিরাপদ লোডার)
+    try {
+      Pushwoosh.push(['on', 'subscribe', function(res) {
+          console.log("Pushwoosh Registered:", res);
+      }]);
+      Pushwoosh.push(['on', 'error', function(err) {}]);
+    } catch(pwErr) {}
 </script>
 
 <script type="module">
