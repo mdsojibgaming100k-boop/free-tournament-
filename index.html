@@ -5,8 +5,9 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>TOUR FF</title>
 
-<!-- গ্লোবাল স্ক্রিপ্ট এরর ও রিজেকশন সাইলেন্সার (Page Error পপ-আপ প্রতিরোধক) -->
+<!-- ================= 🛡️ APP FIREWALL & SECURITY SHIELD ================= -->
 <script>
+  // ১. এরর সাইলেন্সার
   window.addEventListener('error', function(e) {
     if (!e || !e.message || e.message.includes('Script error') || e.message.includes('ResizeObserver')) {
       if (e.preventDefault) e.preventDefault();
@@ -19,17 +20,63 @@
     if (e.preventDefault) e.preventDefault();
     return true;
   });
+
+  // ২. অ্যান্টি-ইন্সপেক্ট ও সিকিউরিটি শিল্ড (Right click, F12, Inspect ব্লক)
+  (function initAppFirewall() {
+    // Right Click Disable
+    document.addEventListener('contextmenu', function(e) {
+      e.preventDefault();
+      return false;
+    });
+
+    // Inspect Key Shortcuts Disable (F12, Ctrl+Shift+I, Ctrl+U ইত্যাদি)
+    document.addEventListener('keydown', function(e) {
+      if (
+        e.keyCode === 123 || // F12
+        (e.ctrlKey && e.shiftKey && (e.keyCode === 73 || e.keyCode === 74 || e.keyCode === 67)) || // Ctrl+Shift+I/J/C
+        (e.ctrlKey && e.keyCode === 85) // Ctrl+U (View Source)
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        return false;
+      }
+    });
+
+    // ৩. রেট-লিমিটিং গার্ড (অতিরিক্ত দ্রুত ক্লিক প্রতিহত করা)
+    window.APP_RATE_LIMIT = {
+      requests: {},
+      check: function(actionKey, limitMs = 1200) {
+        const now = Date.now();
+        const last = this.requests[actionKey] || 0;
+        if (now - last < limitMs) {
+          if (window.Swal) {
+            Swal.fire({
+              icon: 'warning',
+              title: 'ধীরেসুস্থে চেষ্টা করুন!',
+              text: 'অনুগ্রহ করে বারবার দ্রুত চাপবেন না (Rate Limit Exceeded)।',
+              timer: 1500,
+              showConfirmButton: false
+            });
+          }
+          return false;
+        }
+        this.requests[actionKey] = now;
+        return true;
+      }
+    };
+  })();
 </script>
 
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+<!-- FingerprintJS লাইব্রেরি (ইউনিক ডিভাইস আইডি ও ২-অ্যাকাউন্ট লিমিটেশন) -->
+<script src="https://cdn.jsdelivr.net/npm/@fingerprintjs/fingerprintjs@4/dist/fp.min.js"></script>
 <link href="https://fonts.googleapis.com/css2?family=Lato:wght@300;400;700;900&family=Hind+Siliguri:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@sweetalert2/theme-material-ui/material-ui.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<!-- Pushwoosh Web Push SDK (Safe Load) -->
-<script src="https://cdn.pushwoosh.com/webpush/v3/pushwoosh-web-notifications.js" async crossorigin="anonymous"></script>
+<!-- Pushwoosh Removed to Eliminate Script Error -->
 
 <!-- OneSignal Official Web Push SDK v16 (Live Notification Active) -->
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer crossorigin="anonymous"></script>
@@ -3181,18 +3228,7 @@
         font-size: 13.5px;
     }
 
-    /* Pushwoosh Red Bell Widget পুরোপুরি বন্ধ */
-    .pushwoosh-subscribe-widget, 
-    #pushwoosh-subscribe-widget,
-    .pw-subscribe-widget,
-    .pw-widget,
-    [class*="pushwoosh"],
-    [id*="pushwoosh-widget"] {
-        display: none !important;
-        visibility: hidden !important;
-        opacity: 0 !important;
-        pointer-events: none !important;
-    }
+    /* Cleaned */
 </style>
 </head>
 <body>
@@ -3522,6 +3558,14 @@
                 <i class="fas fa-eye-slash auth-password-eye"></i>
             </div>
 
+            <!-- রেফার কোড এবং লাইভ নেম প্রিভিউ -->
+            <label class="auth-input-label">Referral Code (Optional)</label>
+            <div class="auth-input-wrapper" style="margin-bottom:6px;">
+                <i class="fas fa-gift auth-input-icon-left"></i>
+                <input type="text" id="reg-refer-code" class="auth-modern-input" placeholder="Enter referral code" oninput="window.checkLiveReferrer(this.value)">
+            </div>
+            <div id="live-referrer-preview" style="font-size:12px; font-weight:700; min-height:18px; margin-bottom:14px; padding-left:4px;"></div>
+
             <button class="auth-primary-btn" style="background:linear-gradient(135deg, #7c3aed, #9333ea); font-family:'Rajdhani', sans-serif; font-size:17px; letter-spacing:1px;" onclick="window.emailRegister()">
                 🔥 CREATE ESPORTS ID
             </button>
@@ -3794,6 +3838,28 @@
             </div>
 
             <div class="menu-list" style="margin-top:15px;">
+                <!-- 📋 ডিভাইস আইডি ও ১-ক্লিক কপি অপশন -->
+                <div class="menu-item" onclick="window.copyMyDeviceId()">
+                    <i class="fas fa-mobile-alt menu-icon" style="color:var(--success);"></i>
+                    <div style="flex:1;">
+                        <span style="font-weight:700;">My Device ID</span>
+                        <div style="font-size:11px; color:#64748b; font-family:monospace;" id="profile-device-id-text">ডিভাইস আইডি লোড হচ্ছে...</div>
+                    </div>
+                    <button type="button" style="background:rgba(0, 212, 170, 0.12); color:var(--success); border:1px solid rgba(0, 212, 170, 0.25); border-radius:8px; padding:4px 10px; font-size:11px; font-weight:800; cursor:pointer;">
+                        <i class="far fa-copy"></i> Copy
+                    </button>
+                </div>
+
+                <!-- 👥 MY GROUP (রেফার টিম ও ইনকাম) -->
+                <div class="menu-item" onclick="window.navigateSub('my-group')">
+                    <i class="fas fa-users-cog menu-icon" style="color:#f59e0b;"></i>
+                    <div style="flex:1;">
+                        <span style="font-weight:700;">My Group (রেফার ও টিম ইনকাম)</span>
+                        <div style="font-size:11px; color:#f59e0b; font-weight:600;">মোট মেম্বার ও লাইভ কমিশন আয় দেখুন</div>
+                    </div>
+                    <i class="fas fa-chevron-right" style="margin-left:auto; color:#ccc;"></i>
+                </div>
+
                 <div class="menu-item" onclick="window.navigateSub('wallet')">
                     <i class="fas fa-wallet menu-icon"></i>
                     <span>My Wallet</span>
@@ -4301,6 +4367,51 @@
         </div>
     </section>
 
+    <!-- 👥 MY GROUP / MY TEAM SECTION -->
+    <section id="my-group-view" class="app-section" style="background: #f8fafc; min-height: 100vh;">
+        <div class="back-nav" onclick="window.showTab('profile')">
+            <i class="fas fa-arrow-left"></i> My Group & Team
+        </div>
+
+        <div style="padding: 16px;">
+            <!-- রেফার কোড শেয়ার কার্ড -->
+            <div style="background: linear-gradient(135deg, #1e1b4b, #2e1065); border-radius: 18px; padding: 20px; color: white; text-align: center; margin-bottom: 16px; box-shadow: 0 10px 25px rgba(46, 16, 101, 0.25);">
+                <div style="font-size: 13px; opacity: 0.8; font-weight: 600;">আপনার ইউনিক রেফার কোড</div>
+                <div style="font-size: 28px; font-weight: 900; letter-spacing: 3px; color: #ffd700; margin: 8px 0;" id="group-my-refer-code">------</div>
+                <button type="button" onclick="window.copyMyReferCode()" style="background: rgba(255, 255, 255, 0.15); color: white; border: 1px solid rgba(255, 255, 255, 0.25); border-radius: 20px; padding: 7px 18px; font-size: 12px; font-weight: 800; cursor: pointer;">
+                    📋 রেফার কোড কপি করুন
+                </button>
+            </div>
+
+            <!-- গ্রুপ পরিসংখ্যান কার্ড (সদস্য ও মোট আয়) -->
+            <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 20px;">
+                <div style="background: white; border-radius: 14px; padding: 16px; text-align: center; border: 1px solid #ede9fe; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                    <div style="width: 40px; height: 40px; border-radius: 12px; background: rgba(59, 130, 246, 0.12); color: #3b82f6; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px; font-size: 18px;">
+                        <i class="fas fa-users"></i>
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">গ্রুপ সদস্য</div>
+                    <div style="font-size: 22px; font-weight: 900; color: #1e1b4b; margin-top: 2px;" id="group-total-members-count">0</div>
+                </div>
+
+                <div style="background: white; border-radius: 14px; padding: 16px; text-align: center; border: 1px solid #ede9fe; box-shadow: 0 4px 12px rgba(0,0,0,0.03);">
+                    <div style="width: 40px; height: 40px; border-radius: 12px; background: rgba(16, 185, 129, 0.12); color: #10b981; display: flex; align-items: center; justify-content: center; margin: 0 auto 8px; font-size: 18px;">
+                        <i class="fas fa-coins"></i>
+                    </div>
+                    <div style="font-size: 11px; color: #64748b; font-weight: 700; text-transform: uppercase;">মোট রেফার আয়</div>
+                    <div style="font-size: 22px; font-weight: 900; color: #10b981; margin-top: 2px;">৳ <span id="group-total-earnings-display">0</span></div>
+                </div>
+            </div>
+
+            <!-- টিম সদস্যদের তালিকা -->
+            <div style="font-weight: 800; font-size: 14px; color: #1e1b4b; margin-bottom: 10px; display: flex; align-items: center; gap: 8px;">
+                <i class="fas fa-user-friends" style="color: #7c3aed;"></i> আমার গ্রুপের মেম্বার তালিকা
+            </div>
+            <div id="group-members-list-container" style="display: flex; flex-direction: column; gap: 10px;">
+                <div style="text-align: center; padding: 30px; color: #94a3b8; font-size: 12px;">লোড হচ্ছে...</div>
+            </div>
+        </div>
+    </section>
+
     <!-- DEVELOPER & OFFICIAL SOCIALS -->
     <section id="developer-view" class="app-section" style="background: #fff; min-height: 100vh;">
         <div class="back-nav" onclick="window.showTab('profile')" style="background: transparent; border: none; padding: 25px 20px; justify-content: flex-start; align-items: center; gap: 15px;">
@@ -4593,29 +4704,7 @@
 <!-- SweetAlert2 -->
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
-<!-- PUSHWOOSH WEB PUSH SDK & AUTO-REGISTRATION ENGINE -->
-<script src="https://cdn.pushwoosh.com/webpush/v3/pushwoosh-web-notifications.js" async></script>
-<script>
-    var Pushwoosh = window.Pushwoosh = window.Pushwoosh || [];
-    Pushwoosh.push(['init', {
-        logLevel: 'debug',
-        applicationCode: 'D6B35-91BAF',
-        apiToken: '2seNAE74alOrApyG002oRCSbj8eusvgpF5f8rNsWvBlKe8oCEhuMkaJ5oau9YMFmRTM6IlwV0J4eZy9o2JEG',
-        defaultNotificationTitle: 'TOUR FF',
-        autoSubscribe: true,
-        subscribeWidget: {
-            enable: false
-        }
-    }]);
-
-    // সাইলেন্ট হ্যান্ডলার (APK এবং ওয়েবে নিরাপদ লোডার)
-    try {
-      Pushwoosh.push(['on', 'subscribe', function(res) {
-          console.log("Pushwoosh Registered:", res);
-      }]);
-      Pushwoosh.push(['on', 'error', function(err) {}]);
-    } catch(pwErr) {}
-</script>
+<!-- Pushwoosh SDK completely disabled -->
 
 <script type="module">
     import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
@@ -4733,7 +4822,6 @@
     // ============================================================
     // 🔔 TECHXZONE EXACT PUSH ENGINE (VOICE PROMPT, CHIME, RICH DRAWER)
     // ============================================================
-    let pushwooshAppCode = "D6B35-91BAF";
     let notifVoiceAudio = null;
 
     // ১. নোটিফিকেশন প্রম্পট ভয়েস অডিও (TechXZone-এর আসল লিঙ্ক)
@@ -4867,9 +4955,8 @@
             const permission = await Notification.requestPermission();
             if (permission === "granted") {
                 playNotificationChime();
-                syncAndInitPushwoosh(pushwooshAppCode);
 
-                // OneSignal v5 পারমিশন ও পুশ সাবস্ক্রিপশন সিঙ্ক
+                // OneSignal v16 পারমিশন ও পুশ সাবস্ক্রিপশন সিঙ্ক
                 if (window.OneSignalDeferred) {
                     window.OneSignalDeferred.push(async function(OneSignal) {
                         try {
@@ -4987,54 +5074,10 @@
         });
     }
 
-    // পুশউশ ইঞ্জিন স্টার্টআপ ফাংশন (স্বয়ংক্রিয় সিঙ্ক ও ডিভাইস রেজিস্ট্রেশন)
-    function syncAndInitPushwoosh(code) {
-        const targetCode = code || pushwooshAppCode || "D6B35-91BAF";
-        const deviceApiToken = "2seNAE74alOrApyG002oRCSbj8eusvgpF5f8rNsWvBlKe8oCEhuMkaJ5oau9YMFmRTM6IlwV0J4eZy9o2JEG";
-
-        try {
-            window.Pushwoosh = window.Pushwoosh || [];
-            window.Pushwoosh.push(['init', {
-                apiToken: deviceApiToken,
-                applicationCode: targetCode,
-                defaultNotificationTitle: 'TOUR FF',
-                autoSubscribe: true,
-                subscribeWidget: {
-                    enable: false
-                }
-            }]);
-
-            if ("Notification" in window && Notification.permission === "granted") {
-                window.Pushwoosh.push(['register']);
-            }
-        } catch(e) {
-            console.warn("Pushwoosh initialization error:", e);
-        }
-    }
-
-    // ফায়ারবেস থেকে লাইভ কোড সিঙ্ক
-    onSnapshot(doc(db, 'app_settings', 'pushwoosh_config'), snap => {
-        if(snap.exists()) {
-            const d = snap.data();
-            if(d.app_code && d.app_code.trim()) {
-                pushwooshAppCode = d.app_code.trim();
-                syncAndInitPushwoosh(pushwooshAppCode);
-            }
-        } else {
-            syncAndInitPushwoosh("D6B35-91BAF");
-        }
-    });
-
-    // পেজ লোড হলেই পুশউশ স্টার্ট
-    syncAndInitPushwoosh("D6B35-91BAF");
-
     // মিষ্টি বাংলা নোটিফিকেশন ভয়েস সহ পপ-আপ
     function checkAndShowPushPermissionModal() {
         if (!("Notification" in window)) return;
-        if (Notification.permission === "granted") {
-            syncAndInitPushwoosh(pushwooshAppCode);
-            return;
-        }
+        if (Notification.permission === "granted") return;
         if (Notification.permission === "denied") return;
 
         const hasDismissed = sessionStorage.getItem('push_modal_dismissed');
@@ -5058,7 +5101,7 @@
         sessionStorage.setItem('push_modal_dismissed', 'true');
     };
 
-    // ক্রোমের ১ লাইনের Allow/Block ডায়ালগ সক্রিয় করা ও Pushwoosh ডিভাইস রেজিস্ট্রেশন
+    // ক্রোমের ১ লাইনের Allow/Block ডায়ালগ সক্রিয় করা
     window.requestChromeNotificationWithUserGesture = async function() {
         const modal = document.getElementById('push-permission-popup');
         if (modal) modal.classList.remove('active');
@@ -5068,18 +5111,15 @@
         }
 
         try {
-            // সার্ভিস ওয়ার্কার রেজিস্ট্রি নিশ্চিত করা
-            if ('serviceWorker' in navigator) {
-                try {
-                    await navigator.serviceWorker.register('/pushwoosh-service-worker.js');
-                } catch(swErr) {}
-            }
-
             const permission = await Notification.requestPermission();
             if (permission === "granted") {
-                syncAndInitPushwoosh(pushwooshAppCode);
-                window.Pushwoosh = window.Pushwoosh || [];
-                window.Pushwoosh.push(['register']);
+                if (window.OneSignalDeferred) {
+                    window.OneSignalDeferred.push(async function(OneSignal) {
+                        try {
+                            await OneSignal.Notifications.requestPermission();
+                        } catch(e){}
+                    });
+                }
 
                 // ফায়ারবেসেও পারমিশন রেজিস্টার
                 if(currentUser) {
@@ -7089,6 +7129,22 @@
             selectedChannel = 'sms';
         }
 
+        const refCodeInp = (document.getElementById('reg-refer-code')?.value || '').trim();
+
+        // 🛑 ১ ডিভাইসে সর্বোচ্চ ২ অ্যাকাউন্ট প্রি-রেজিস্ট্রেশন চেক
+        if(myDeviceVisitorId) {
+            try {
+                const devSnap = await getDoc(doc(db, 'devices', myDeviceVisitorId));
+                if(devSnap.exists() && (devSnap.data().count || 0) >= 2) {
+                    return Swal.fire({
+                        icon: 'error',
+                        title: 'ডিভাইস লিমিট শেষ!',
+                        text: 'একটি ডিভাইস থেকে সর্বোচ্চ ২টি অ্যাকাউন্ট খোলা সম্ভব। আপনার লিমিট শেষ!'
+                    });
+                }
+            } catch(e) {}
+        }
+
         const target = selectedChannel === 'sms' ? ph : e;
         const code = Math.floor(100000 + Math.random() * 900000).toString();
 
@@ -7098,7 +7154,7 @@
             target: target,
             channel: selectedChannel,
             purpose: 'register',
-            regData: { username: n, email: e, phone: ph, password: p }
+            regData: { username: n, email: e, phone: ph, password: p, referCode: refCodeInp }
         };
 
         // ব্যাকগ্রাউন্ডে ওটিপি প্রেরণ
@@ -7154,9 +7210,27 @@
             toggleLoader(true);
 
             try {
+                // 🛑 ১ ডিভাইসে সর্বোচ্চ ২ অ্যাকাউন্ট লিমিট যাচাই
+                if(myDeviceVisitorId) {
+                    const devDocRef = doc(db, 'devices', myDeviceVisitorId);
+                    const devSnap = await getDoc(devDocRef);
+                    const devCount = devSnap.exists() ? (parseInt(devSnap.data().count) || 0) : 0;
+
+                    if(devCount >= 2) {
+                        toggleLoader(false);
+                        return Swal.fire({
+                            icon: 'error',
+                            title: 'ডিভাইস লিমিট শেষ!',
+                            text: 'একটি ডিভাইস থেকে সর্বোচ্চ ২টি অ্যাকাউন্ট করা যাবে। আপনার ডিভাইসে অলরেডি ২টি অ্যাকাউন্ট আছে!'
+                        });
+                    }
+                }
+
                 const cred = await createUserWithEmailAndPassword(auth, reg.email, reg.password);
                 currentUser = cred.user;
 
+                // ইউনিক রেফার কোড জেনারেশন (৬ অক্ষরের)
+                const myNewReferCode = (reg.username.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'USR') + Math.floor(100 + Math.random() * 900);
                 const welcomeBonus = signupBonusAmount > 0 ? signupBonusAmount : 0;
                 
                 await setDoc(doc(db, 'users', cred.user.uid), {
@@ -7166,8 +7240,64 @@
                     password: reg.password,
                     deposit: welcomeBonus,
                     winning: 0,
+                    device_id: myDeviceVisitorId || '',
+                    refer_code: myNewReferCode,
+                    referred_by: reg.referCode ? reg.referCode.trim().toUpperCase() : '',
+                    refer_earnings: 0,
                     createdAt: serverTimestamp()
                 }, { merge: true }).catch(err => console.warn("User doc save warning:", err));
+
+                // ডিভাইসের অ্যাকাউন্ট কাউন্ট বাড়ানো
+                if(myDeviceVisitorId) {
+                    const devDocRef = doc(db, 'devices', myDeviceVisitorId);
+                    const devSnap = await getDoc(devDocRef);
+                    const curCount = devSnap.exists() ? (parseInt(devSnap.data().count) || 0) : 0;
+                    await setDoc(devDocRef, {
+                        count: curCount + 1,
+                        lastUpdated: new Date().toLocaleString(),
+                        lastUser: reg.username
+                    }, { merge: true });
+                }
+
+                // 🎁 রেফারারকে সাইন-আপ বোনাস প্রদান
+                if(reg.referCode) {
+                    try {
+                        const qRef = query(collection(db, 'users'), where('refer_code', '==', reg.referCode.trim().toUpperCase()));
+                        const refSnap = await getDocs(qRef);
+                        if(!refSnap.empty) {
+                            const refDoc = refSnap.docs[0];
+                            const refUser = refDoc.data();
+                            const bonusAmount = parseFloat(userReferRules.signup_bonus || 20);
+
+                            if(bonusAmount > 0) {
+                                const newDep = (parseFloat(refUser.deposit) || 0) + bonusAmount;
+                                const newEarnings = (parseFloat(refUser.refer_earnings) || 0) + bonusAmount;
+
+                                await updateDoc(doc(db, 'users', refDoc.id), {
+                                    deposit: newDep,
+                                    refer_earnings: newEarnings
+                                });
+
+                                await addDoc(collection(db, 'transactions'), {
+                                    userId: refDoc.id,
+                                    type: `🎁 Referral Signup Bonus (${reg.username})`,
+                                    amount: bonusAmount,
+                                    status: 'Success',
+                                    date: new Date().toLocaleString(),
+                                    timestampMs: Date.now()
+                                });
+
+                                await addDoc(collection(db, 'notifications'), {
+                                    title: '🎁 নতুন রেফারেল বোনাস!',
+                                    body: `আপনার রেফার কোড দিয়ে ${reg.username} জয়েন করায় আপনি ৳${bonusAmount} রেফারেল বোনাস পেয়েছেন!`,
+                                    targetUserId: refDoc.id,
+                                    time: new Date().toLocaleString(),
+                                    timestampMs: Date.now()
+                                });
+                            }
+                        }
+                    } catch(rErr) { console.warn("Refer bonus error:", rErr); }
+                }
 
                 updateProfile(cred.user, { displayName: reg.username }).catch(()=>{});
 
@@ -7347,12 +7477,16 @@
 
         if(!userSnap.exists()) {
             const welcomeBonus = signupBonusAmount > 0 ? signupBonusAmount : 0;
+            const uname = user.displayName || (user.email ? user.email.split('@')[0] : 'Google User');
+            const newRefCode = (uname.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'USR') + Math.floor(100 + Math.random() * 900);
             await setDoc(userRef, {
-                username: user.displayName || (user.email ? user.email.split('@')[0] : 'Google User'),
+                username: uname,
                 email: (user.email || '').toLowerCase(),
                 phone: user.phoneNumber || '',
                 deposit: welcomeBonus,
                 winning: 0,
+                refer_code: newRefCode,
+                refer_earnings: 0,
                 createdAt: serverTimestamp()
             }, { merge: true });
 
@@ -7374,9 +7508,21 @@
                     timestampMs: Date.now()
                 }).catch(console.warn);
             }
-        } else if(userSnap.data().isBanned === true) {
-            await signOut(auth);
-            throw new Error('আপনার একাউন্টটি ব্যান করা হয়েছে।');
+        } else {
+            const uData = userSnap.data();
+            if(uData.isBanned === true) {
+                await signOut(auth);
+                throw new Error('আপনার একাউন্টটি ব্যান করা হয়েছে।');
+            }
+            // পুরাতন ইউজারের রেফার কোড না থাকলে অটো তৈরি ও সেভ করা
+            if(!uData.refer_code) {
+                const uname = uData.username || user.displayName || 'USR';
+                const newRefCode = (uname.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'USR') + Math.floor(100 + Math.random() * 900);
+                await updateDoc(userRef, {
+                    refer_code: newRefCode,
+                    refer_earnings: uData.refer_earnings || 0
+                }).catch(()=>{});
+            }
         }
     }
 
@@ -7675,7 +7821,11 @@
         if(t === 'mymatches') loadMyMatches();
         if(t === 'result') loadResults();
         if(t === 'shop') renderShopPackages();
-        if(t === 'profile') renderRulesPage();
+        if(t === 'profile') {
+            renderRulesPage();
+            const devTxt = document.getElementById('profile-device-id-text');
+            if(devTxt) devTxt.innerText = myDeviceVisitorId || 'লোড হচ্ছে...';
+        }
         toggleLoader(false);
     }
 
@@ -7695,8 +7845,11 @@
                 'edit-profile': 'edit-profile-view',
                 'developer': 'developer-view',
                 'leaderboard': 'leaderboard-view',
-                'rules': 'rules-view'
+                'rules': 'rules-view',
+                'my-group': 'my-group-view'
             };
+
+            if(t === 'my-group') loadMyGroupData();
             const targetId = map[t];
             if(targetId) {
                 const el = document.getElementById(targetId);
@@ -9052,6 +9205,150 @@
             toggleLoader(false);
             Swal.fire('Error', e.message, 'error');
         }
+    }
+
+    // ==========================================
+    // 📱 FINGERPRINTJS & UNIQUE DEVICE ID ENGINE
+    // ==========================================
+    let myDeviceVisitorId = "";
+
+    // পেজ লোড হলেই ডিভাইসের FingerprintVisitorID নেওয়া
+    if(window.FingerprintJS) {
+        FingerprintJS.load().then(fp => fp.get()).then(result => {
+            myDeviceVisitorId = result.visitorId;
+            const devTxt = document.getElementById('profile-device-id-text');
+            if(devTxt) devTxt.innerText = myDeviceVisitorId;
+        }).catch(err => console.warn("FingerprintJS load error:", err));
+    }
+
+    window.copyMyDeviceId = function() {
+        if(!myDeviceVisitorId) {
+            return Swal.fire('অপেক্ষা করুন', 'ডিভাইস আইডি লোড হচ্ছে, কিছুক্ষণ পর চেষ্টা করুন!', 'info');
+        }
+        navigator.clipboard.writeText(myDeviceVisitorId).then(() => {
+            Swal.fire({
+                icon: 'success',
+                title: 'কপি সফল!',
+                text: `আপনার ডিভাইস আইডি কপি করা হয়েছে: ${myDeviceVisitorId}`,
+                timer: 1500,
+                showConfirmButton: false
+            });
+        });
+    };
+
+    // ==========================================
+    // 👥 REFERRAL SYSTEM & LIVE NAME PREVIEW
+    // ==========================================
+    let userReferRules = {
+        signup_bonus: 20,
+        deposit_commission: 5,
+        withdraw_commission: 2
+    };
+
+    onSnapshot(doc(db, 'app_settings', 'commission_rules'), snap => {
+        if(snap.exists()) {
+            userReferRules = { ...userReferRules, ...snap.data() };
+        }
+    });
+
+    window.checkLiveReferrer = async function(code) {
+        const previewEl = document.getElementById('live-referrer-preview');
+        if(!previewEl) return;
+
+        const cleanCode = (code || '').trim().toUpperCase();
+        if(cleanCode.length < 3) {
+            previewEl.innerHTML = '';
+            return;
+        }
+
+        try {
+            const q = query(collection(db, 'users'), where('refer_code', '==', cleanCode));
+            const snap = await getDocs(q);
+
+            if(!snap.empty) {
+                const refUser = snap.docs[0].data();
+                previewEl.innerHTML = `<span style="color:#10b981;">✔ ইনভাইট করেছেন: <b>${refUser.username || refUser.name}</b></span>`;
+            } else {
+                previewEl.innerHTML = `<span style="color:#ef4444;">❌ রেফার কোড পাওয়া যায়নি!</span>`;
+            }
+        } catch(e) {
+            previewEl.innerHTML = '';
+        }
+    };
+
+    window.copyMyReferCode = function() {
+        const codeEl = document.getElementById('group-my-refer-code');
+        const code = (codeEl ? codeEl.innerText : '').trim();
+        if(!code || code === '------' || code.includes('লোড')) {
+            return Swal.fire({ 
+                icon:'info', 
+                title:'রেফার কোড তৈরি হচ্ছে...', 
+                text:'অনুগ্রহ করে এক মুহূর্ত অপেক্ষা করুন!', 
+                timer:1500, 
+                showConfirmButton:false 
+            });
+        }
+        copyToClipboard(code);
+    };
+
+    async function loadMyGroupData() {
+        if(!currentUser) return;
+        const codeEl = document.getElementById('group-my-refer-code');
+        const countEl = document.getElementById('group-total-members-count');
+        const earnEl = document.getElementById('group-total-earnings-display');
+        const listEl = document.getElementById('group-members-list-container');
+
+        try {
+            const userRef = doc(db, 'users', currentUser.uid);
+            const uSnap = await getDoc(userRef);
+            const uData = uSnap.data() || {};
+            let myCode = (uData.refer_code || '').trim();
+
+            // যদি ইউজারের কোনো রেফার কোড ডাটাবেসে না থাকে, তবে সাথে সাথে তৈরি ও সেভ করা
+            if(!myCode || myCode === '------') {
+                const uname = uData.username || currentUser.displayName || (currentUser.email ? currentUser.email.split('@')[0] : 'USR');
+                myCode = (uname.replace(/[^A-Za-z0-9]/g, '').slice(0, 3).toUpperCase() || 'USR') + Math.floor(100 + Math.random() * 900);
+                await updateDoc(userRef, {
+                    refer_code: myCode,
+                    refer_earnings: uData.refer_earnings || 0
+                }).catch(()=>{});
+            }
+
+            const totalEarn = parseFloat(uData.refer_earnings || 0);
+
+            if(codeEl) codeEl.innerText = myCode;
+            if(earnEl) earnEl.innerText = totalEarn.toFixed(2);
+
+            if(myCode && myCode !== '------') {
+                const qMembers = query(collection(db, 'users'), where('referred_by', '==', myCode));
+                onSnapshot(qMembers, snap => {
+                    if(countEl) countEl.innerText = snap.size;
+
+                    if(snap.empty) {
+                        if(listEl) listEl.innerHTML = `<div style="text-align:center; padding:30px; color:#94a3b8; font-size:12px;">আপনার গ্রুপে এখনো কোনো মেম্বার যুক্ত হয়নি। বন্ধুদের রেফার করুন!</div>`;
+                        return;
+                    }
+
+                    if(listEl) {
+                        listEl.innerHTML = "";
+                        snap.forEach(d => {
+                            const m = d.data();
+                            const joinDate = m.createdAt?.toDate ? m.createdAt.toDate().toLocaleDateString() : (m.createdAt || 'N/A');
+                            listEl.innerHTML += `
+                            <div style="background:white; border-radius:12px; padding:12px 14px; border:1px solid #ede9fe; display:flex; justify-content:space-between; align-items:center; box-shadow:0 2px 6px rgba(0,0,0,0.02);">
+                                <div>
+                                    <div style="font-weight:800; font-size:13.5px; color:#1e1b4b;">👤 ${m.username || 'Member'}</div>
+                                    <div style="font-size:11px; color:#64748b; margin-top:2px;">জয়েনিং তারিখ: ${joinDate}</div>
+                                </div>
+                                <span style="background:rgba(16,185,129,0.12); color:#10b981; font-size:10px; font-weight:800; padding:3px 8px; border-radius:12px;">সক্রিয় সদস্য</span>
+                            </div>`;
+                        });
+                    }
+                }, err => {
+                    console.warn("My group query error:", err);
+                });
+            }
+        } catch(e) { console.warn("Group load error:", e); }
     }
 
     // ===== UTILITY =====
