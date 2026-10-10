@@ -11,22 +11,23 @@
 <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://cdn.jsdelivr.net/npm/@sweetalert2/theme-material-ui/material-ui.min.css" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-<!-- Pushwoosh Web Push SDK (অক্ষত রাখা হয়েছে) -->
+<!-- Pushwoosh Web Push SDK -->
 <script src="https://cdn.pushwoosh.com/webpush/v3/pushwoosh-web-notifications.js" async></script>
 
-<!-- OneSignal Web SDK v16 (Official CDN Integration) -->
+<!-- OneSignal Official Web Push SDK v16 (Unified Clean Integration) -->
 <script src="https://cdn.onesignal.com/sdks/web/v16/OneSignalSDK.page.js" defer></script>
 <script>
-    window.OneSignalDeferred = window.OneSignalDeferred || [];
-    OneSignalDeferred.push(async function(OneSignal) {
-        await OneSignal.init({
-            appId: "7398e8c1-9373-4680-bc63-27c413779609",
-            allowLocalhostAsSecureOrigin: true,
-            notifyButton: {
-                enable: false // কাস্টম UI ব্যবহারের জন্য ডিফল্ট লাল বেল হাইড রাখা হয়েছে
-            }
-        });
+  window.OneSignalDeferred = window.OneSignalDeferred || [];
+  OneSignalDeferred.push(async function(OneSignal) {
+    await OneSignal.init({
+      appId: "7398e8c1-9373-4680-bc63-27c413779609",
+      safari_web_id: "web.onesignal.auto.3cda868c-95ba-4dc0-a9c6-5ad5b099bc53",
+      allowLocalhostAsSecureOrigin: true,
+      notifyButton: {
+        enable: true,
+      },
     });
+  });
 </script>
 
 <style>
@@ -4915,11 +4916,13 @@
                 topBadge.style.display = items.length > 0 ? 'block' : 'none';
             }
 
-            // TechXZone ডিজাইনে কার্ড রেন্ডার
+            // TechXZone স্টাইল ছবি ও লিংক ক্লিকেবল নোটিফিকেশন কার্ড
             container.innerHTML = items.map(n => {
                 const banner = n.image || n.imageUrl || '';
+                const clickAction = n.link ? `onclick="window.open('${n.link}', '_blank')"` : '';
+                const cursorStyle = n.link ? 'cursor:pointer;' : '';
                 return `
-                <div style="background:#ffffff; border:1px solid #ede9fe; border-radius:14px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,0.04); display:flex; flex-direction:column; gap:6px;">
+                <div ${clickAction} style="background:#ffffff; border:1px solid #ede9fe; border-radius:14px; padding:12px; box-shadow:0 2px 8px rgba(0,0,0,0.04); display:flex; flex-direction:column; gap:8px; ${cursorStyle} transition:transform 0.2s;" onmouseover="this.style.transform='scale(0.99)'" onmouseout="this.style.transform='none'">
                     <div style="display:flex; justify-content:space-between; align-items:center;">
                         <span style="font-weight:800; font-size:13px; color:#1e1b4b; display:flex; align-items:center; gap:6px;">
                             <i class="fas fa-bell" style="color:#7c3aed; font-size:11px;"></i> ${n.title || 'নোটিফিকেশন'}
@@ -4928,11 +4931,16 @@
                     </div>
 
                     ${banner ? `
-                    <div style="width:100%; max-height:140px; border-radius:10px; overflow:hidden; border:1px solid #f1f5f9; background:#f8fafc;">
-                        <img src="${banner}" style="width:100%; height:100%; object-fit:cover;" onerror="this.parentElement.style.display='none'">
+                    <div style="width:100%; max-height:160px; border-radius:10px; overflow:hidden; border:1px solid #f1f5f9; background:#f8fafc;">
+                        <img src="${banner}" style="width:100%; height:100%; max-height:160px; object-fit:cover; display:block;" onerror="this.parentElement.style.display='none'">
                     </div>` : ''}
 
-                    <p style="font-size:12px; color:#475569; line-height:1.5; margin:0;">${n.message || n.body || ''}</p>
+                    <p style="font-size:12px; color:#475569; line-height:1.5; margin:0; word-break:break-word;">${n.message || n.body || ''}</p>
+                    
+                    ${n.link ? `
+                    <div style="text-align:right;">
+                        <span style="font-size:11px; color:#7c3aed; font-weight:800;">লিংক দেখুন &rarr;</span>
+                    </div>` : ''}
                 </div>`;
             }).join('');
         });
